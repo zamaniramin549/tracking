@@ -45,6 +45,7 @@
                data-final-lng="{{ v['visit_map_lng'] }}"
                data-kind="{{ v['visit_map_kind'] }}">
             <button type="button" class="map-reveal">Show map</button>
+            <p class="map-enlarge-hint" hidden>Click the map for full size.</p>
             <div class="visit-mini-map" hidden aria-hidden="true"></div>
           </div>
           {% else %}
@@ -90,8 +91,19 @@
   var modalCaption = document.getElementById('map-modal-caption');
   var modalMapInstance = null;
 
+  function openFromSlot(slot) {
+    if (!slot) return;
+    openModal(
+      slot.dataset.visitId,
+      parseFloat(slot.dataset.finalLat, 10),
+      parseFloat(slot.dataset.finalLng, 10),
+      slot.dataset.kind || 'ip'
+    );
+  }
+
   function closeModal() {
     if (!modal) return;
+    modal.setAttribute('hidden', '');
     modal.hidden = true;
     document.body.classList.remove('map-modal-open');
     if (modalMapInstance) {
@@ -104,6 +116,7 @@
     var pts = (VISIT_TRACKS[String(visitId)] || []).slice();
     var lineColor = kind === 'gps' ? '#3ee8a9' : '#f0b429';
 
+    modal.removeAttribute('hidden');
     modal.hidden = false;
     document.body.classList.add('map-modal-open');
     modalCaption.textContent = pts.length > 1
@@ -152,7 +165,7 @@
   }
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && modal && !modal.hidden) closeModal();
+    if (e.key === 'Escape' && modal && !modal.hasAttribute('hidden')) closeModal();
   });
 
   if (modal) {
@@ -161,7 +174,7 @@
     });
   }
 
-  function mountMap(el, lat, lng, kind) {
+  function mountMap(el, lat, lng, kind, slot) {
     if (el.dataset.mounted === '1') return;
     el.dataset.mounted = '1';
     if (isNaN(lat) || isNaN(lng)) return;
@@ -177,7 +190,7 @@
     });
     L.tileLayer(tileUrl, { maxZoom: 19, attribution: '' }).addTo(map);
     var color = kind === 'gps' ? '#3ee8a9' : '#f0b429';
-    L.circleMarker([lat, lng], {
+    var marker = L.circleMarker([lat, lng], {
       radius: 8,
       color: color,
       weight: 2,
@@ -189,16 +202,27 @@
 
     el.classList.add('visit-mini-map--enlarge');
     el.title = 'Click for full map';
-    el.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      var slot = el.closest('.map-slot');
-      if (!slot) return;
-      var vid = slot.dataset.visitId;
-      var flat = parseFloat(slot.dataset.finalLat, 10);
-      var flng = parseFloat(slot.dataset.finalLng, 10);
-      var k = slot.dataset.kind || 'ip';
-      openModal(vid, flat, flng, k);
+    /* Leaflet captures pointer events on the div — use map/marker click, not DOM click. */
+    function openThis() {
+      openFromSlot(slot);
+    }
+    map.on('click', openThis);
+    marker.on('click', function (e) {
+      if (e && e.originalEvent && L.DomEvent) {
+        L.DomEvent.stopPropagation(e.originalEvent);
+      }
+      openThis();
     });
+
+    var hint = slot.querySelector('.map-enlarge-hint');
+    if (hint) {
+      hint.hidden = false;
+      hint.style.cursor = 'pointer';
+      hint.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        openThis();
+      });
+    }
   }
 
   var scroll = document.querySelector('.visits-scroll');
@@ -219,9 +243,9 @@
     btn.hidden = true;
     host.hidden = false;
     host.removeAttribute('aria-hidden');
-    host.setAttribute('aria-label', 'Location preview; click to enlarge');
+    host.setAttribute('aria-label', 'Location preview; click map to enlarge');
 
-    mountMap(host, lat, lng, kind);
+    mountMap(host, lat, lng, kind, slot);
   });
 })();
 </script>

@@ -598,6 +598,19 @@ button.map-reveal:focus {
   outline-offset: 2px;
 }
 
+.map-enlarge-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.3;
+  user-select: none;
+}
+
+.map-enlarge-hint:hover {
+  color: var(--accent);
+}
+
 .osm-attribution {
   font-size: 0.7rem;
   color: var(--muted);
