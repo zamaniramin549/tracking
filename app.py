@@ -496,6 +496,29 @@ def visit_track():
     return jsonify({"ok": True})
 
 
+def _build_visit_tracks_json(db, visit_ids):
+    if not visit_ids:
+        return {}
+    placeholders = ",".join("?" * len(visit_ids))
+    q = (
+        "SELECT visit_id, lat, lng, accuracy, recorded_at FROM visit_location_points "
+        f"WHERE visit_id IN ({placeholders}) ORDER BY visit_id, id ASC"
+    )
+    rows = db.execute(q, visit_ids).fetchall()
+    by_vid = {}
+    for r in rows:
+        vid = r["visit_id"]
+        by_vid.setdefault(vid, []).append(
+            {
+                "lat": float(r["lat"]),
+                "lng": float(r["lng"]),
+                "acc": r["accuracy"],
+                "t": r["recorded_at"],
+            }
+        )
+    return {str(k): v for k, v in by_vid.items()}
+
+
 @app.route("/stats/<slug>")
 def stats(slug):
     token = request.args.get("token", "")
@@ -509,7 +532,7 @@ def stats(slug):
 
     raw = db.execute(
         """
-        SELECT ip, user_agent, referrer, visited_at,
+        SELECT id, ip, user_agent, referrer, visited_at,
                ip_country, ip_region, ip_city, ip_lat, ip_lon,
                gps_lat, gps_lon, gps_accuracy_m
         FROM visits WHERE link_id = ?
@@ -520,7 +543,10 @@ def stats(slug):
     ).fetchall()
 
     visits = [visit_display_fields(r) for r in raw]
+    visit_ids = [v["id"] for v in visits if v.get("id") is not None]
+    visit_tracks = _build_visit_tracks_json(db, visit_ids)
     has_visit_maps = any(v.get("visit_map_lat") is not None for v in visits)
+    needs_leaflet = has_visit_maps or bool(visit_tracks)
 
     return render_template(
         "stats.html",
@@ -531,6 +557,8 @@ def stats(slug):
         visits=visits,
         visit_count=len(visits),
         has_visit_maps=has_visit_maps,
+        visit_tracks=visit_tracks,
+        needs_leaflet=needs_leaflet,
     )
 
 

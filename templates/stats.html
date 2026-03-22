@@ -2,10 +2,10 @@
 {% block body_attrs %} class="page-stats"{% endblock %}
 {% block title %}Stats · {{ slug }} · OpenShort{% endblock %}
 {% block extra_head %}
-{% if visits and has_visit_maps %}
+{% if visits and needs_leaflet %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <style>
-  .leaflet-container { background: #2a3140; font-family: var(--font-body, system-ui, sans-serif); }
+  .leaflet-container { background: #2d333d; font-family: var(--font-body, system-ui, sans-serif); }
 </style>
 {% endif %}
 {% endblock %}
@@ -18,7 +18,7 @@
 
 <div class="card visits-table-card">
   {% if visits %}
-  <p class="visits-table-hint">Click <strong>Show map</strong> on a row to load that visit’s map (tiles load only then). <strong>GPS</strong> = green pin, <strong>IP estimate</strong> = amber.</p>
+  <p class="visits-table-hint"><strong>Show map</strong> loads the small preview. <strong>Click the preview</strong> for a large map. If we saved multiple GPS samples during the redirect, the <strong>green line</strong> is that path (recorded then, not live now). <strong>GPS</strong> pin / line = green tint, <strong>IP</strong> = amber.</p>
   <p class="osm-attribution">Map tiles © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> contributors</p>
   <div class="visits-scroll">
   <table class="visits">
@@ -39,11 +39,12 @@
         <td class="col-time"><span class="time-human" title="{{ v['visited_at'] }}">{{ v['visited_at_human'] }}</span></td>
         <td class="col-mini-map">
           {% if v['visit_map_lat'] is not none %}
-          <div class="map-slot">
-            <button type="button" class="map-reveal"
-                    data-lat="{{ v['visit_map_lat'] }}"
-                    data-lng="{{ v['visit_map_lng'] }}"
-                    data-kind="{{ v['visit_map_kind'] }}">Show map</button>
+          <div class="map-slot"
+               data-visit-id="{{ v['id'] }}"
+               data-final-lat="{{ v['visit_map_lat'] }}"
+               data-final-lng="{{ v['visit_map_lng'] }}"
+               data-kind="{{ v['visit_map_kind'] }}">
+            <button type="button" class="map-reveal">Show map</button>
             <div class="visit-mini-map" hidden aria-hidden="true"></div>
           </div>
           {% else %}
@@ -66,12 +67,99 @@
 </div>
 <p><a href="{{ url_for('index') }}">← Create another link</a></p>
 
-{% if visits and has_visit_maps %}
+{% if visits and needs_leaflet %}
+<div id="map-modal" class="map-modal" role="dialog" aria-modal="true" aria-labelledby="map-modal-title" hidden>
+  <div class="map-modal-backdrop" data-close-modal></div>
+  <div class="map-modal-panel">
+    <button type="button" class="map-modal-close" data-close-modal aria-label="Close">×</button>
+    <h2 id="map-modal-title" class="map-modal-title">Visit location</h2>
+    <p class="map-modal-caption" id="map-modal-caption"></p>
+    <div id="map-modal-map" class="map-modal-map"></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 (function () {
+  var VISIT_TRACKS = {{ visit_tracks|tojson }};
   var tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  var tileOpts = { maxZoom: 19, attribution: '' };
+  var tileOpts = { maxZoom: 19, attribution: '© OpenStreetMap' };
+
+  var modal = document.getElementById('map-modal');
+  var modalMapEl = document.getElementById('map-modal-map');
+  var modalCaption = document.getElementById('map-modal-caption');
+  var modalMapInstance = null;
+
+  function closeModal() {
+    if (!modal) return;
+    modal.hidden = true;
+    document.body.classList.remove('map-modal-open');
+    if (modalMapInstance) {
+      try { modalMapInstance.remove(); } catch (e) {}
+      modalMapInstance = null;
+    }
+  }
+
+  function openModal(visitId, finalLat, finalLng, kind) {
+    var pts = (VISIT_TRACKS[String(visitId)] || []).slice();
+    var lineColor = kind === 'gps' ? '#3ee8a9' : '#f0b429';
+
+    modal.hidden = false;
+    document.body.classList.add('map-modal-open');
+    modalCaption.textContent = pts.length > 1
+      ? 'Green line: ' + pts.length + ' live samples saved during redirect (playback of that path, not live tracking now).'
+      : (pts.length === 1 ? 'One sample from redirect.' : 'Approximate or final pin for this visit.');
+
+    if (modalMapInstance) {
+      try { modalMapInstance.remove(); } catch (e) {}
+      modalMapInstance = null;
+    }
+
+    modalMapInstance = L.map(modalMapEl, {
+      scrollWheelZoom: true,
+      attributionControl: true
+    });
+    L.tileLayer(tileUrl, tileOpts).addTo(modalMapInstance);
+
+    var bounds = [];
+    if (pts.length >= 2) {
+      var latlngs = pts.map(function (p) { return [p.lat, p.lng]; });
+      L.polyline(latlngs, { color: lineColor, weight: 4, opacity: 0.9 }).addTo(modalMapInstance);
+      L.circleMarker(latlngs[0], { radius: 10, color: '#fff', weight: 2, fillColor: lineColor, fillOpacity: 1 })
+        .bindPopup('Start').addTo(modalMapInstance);
+      L.circleMarker(latlngs[latlngs.length - 1], { radius: 10, color: '#fff', weight: 2, fillColor: '#e85d5d', fillOpacity: 1 })
+        .bindPopup('End').addTo(modalMapInstance);
+      latlngs.forEach(function (ll) { bounds.push(ll); });
+    } else if (pts.length === 1) {
+      var ll = [pts[0].lat, pts[0].lng];
+      L.circleMarker(ll, { radius: 12, color: lineColor, weight: 2, fillColor: lineColor, fillOpacity: 0.95 }).addTo(modalMapInstance);
+      bounds.push(ll);
+    } else if (finalLat != null && finalLng != null && !isNaN(finalLat) && !isNaN(finalLng)) {
+      var f = [finalLat, finalLng];
+      L.circleMarker(f, { radius: 12, color: lineColor, weight: 2, fillColor: lineColor, fillOpacity: 0.95 }).addTo(modalMapInstance);
+      bounds.push(f);
+    }
+
+    if (bounds.length === 1) {
+      modalMapInstance.setView(bounds[0], 15);
+    } else if (bounds.length > 1) {
+      modalMapInstance.fitBounds(bounds, { padding: [48, 48], maxZoom: 16 });
+    } else {
+      modalMapInstance.setView([20, 0], 2);
+    }
+
+    setTimeout(function () { if (modalMapInstance) modalMapInstance.invalidateSize(); }, 120);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal && !modal.hidden) closeModal();
+  });
+
+  if (modal) {
+    modal.addEventListener('click', function (e) {
+      if (e.target.dataset.closeModal !== undefined) closeModal();
+    });
+  }
 
   function mountMap(el, lat, lng, kind) {
     if (el.dataset.mounted === '1') return;
@@ -87,7 +175,7 @@
       boxZoom: false,
       keyboard: false
     });
-    L.tileLayer(tileUrl, tileOpts).addTo(map);
+    L.tileLayer(tileUrl, { maxZoom: 19, attribution: '' }).addTo(map);
     var color = kind === 'gps' ? '#3ee8a9' : '#f0b429';
     L.circleMarker([lat, lng], {
       radius: 8,
@@ -98,6 +186,19 @@
     }).addTo(map);
     map.setView([lat, lng], 14);
     setTimeout(function () { map.invalidateSize(); }, 50);
+
+    el.classList.add('visit-mini-map--enlarge');
+    el.title = 'Click for full map';
+    el.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      var slot = el.closest('.map-slot');
+      if (!slot) return;
+      var vid = slot.dataset.visitId;
+      var flat = parseFloat(slot.dataset.finalLat, 10);
+      var flng = parseFloat(slot.dataset.finalLng, 10);
+      var k = slot.dataset.kind || 'ip';
+      openModal(vid, flat, flng, k);
+    });
   }
 
   var scroll = document.querySelector('.visits-scroll');
@@ -111,14 +212,14 @@
     var host = slot.querySelector('.visit-mini-map');
     if (!host) return;
 
-    var lat = parseFloat(btn.dataset.lat, 10);
-    var lng = parseFloat(btn.dataset.lng, 10);
-    var kind = btn.dataset.kind || 'ip';
+    var lat = parseFloat(slot.dataset.finalLat, 10);
+    var lng = parseFloat(slot.dataset.finalLng, 10);
+    var kind = slot.dataset.kind || 'ip';
 
     btn.hidden = true;
     host.hidden = false;
     host.removeAttribute('aria-hidden');
-    host.setAttribute('aria-label', 'Location map for this visit');
+    host.setAttribute('aria-label', 'Location preview; click to enlarge');
 
     mountMap(host, lat, lng, kind);
   });
