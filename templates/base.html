@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}OpenShort{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body{% block body_attrs %}{% endblock %}>
+  <div class="wrap">
+    <header class="brand">
+      <span class="brand-name">OpenShort</span>
+      <span class="brand-tag">Transparent links</span>
+    </header>
+    {% block body %}{% endblock %}
+    <footer class="site">
+      Use only with informed consent and applicable law. Stats URLs are secret—treat them like passwords.
+    </footer>
+  </div>
+</body>
+</html>

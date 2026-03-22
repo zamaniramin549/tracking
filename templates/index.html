@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}OpenShort — short links with clear analytics{% endblock %}
+{% block body %}
+<div id="url-notice" class="url-notice" role="status" hidden>
+  <div class="url-notice-inner">
+    <p class="url-notice-text"><strong>Heads up.</strong> Visits can be logged: time, IP, brief live GPS samples if the browser allows (then redirect), otherwise approximate area from public IP, plus browser hint and referrer. Tell people when the law or your policies require it.</p>
+    <button type="button" class="url-notice-close" id="url-notice-dismiss" aria-label="Dismiss notice">×</button>
+  </div>
+</div>
+
+<h1>Short links, visible analytics</h1>
+<p class="lead">Create a redirect link and see when it was opened—IP, browser hint, and referrer—after each click.</p>
+
+<div class="card">
+  <form id="create-form" action="#" method="post">
+    <div class="form-row">
+      <input type="url" name="url" id="url" placeholder="https://example.com/page" required autocomplete="off">
+      <button type="submit" class="primary" id="submit-btn">Create link</button>
+    </div>
+    <p class="err" id="form-err" hidden></p>
+    <div class="result" id="result">
+      <div class="field">
+        <label>Short link (share this)</label>
+        <p class="field-hint">Click the link below to see a reminder at the top.</p>
+        <code class="mono short-link-hit" id="out-short" tabindex="0" role="button" title="Click for privacy reminder"></code>
+      </div>
+      <div class="field">
+        <label>Stats (keep private)</label>
+        <code class="mono" id="out-stats"></code>
+      </div>
+    </div>
+  </form>
+</div>
+
+<section class="tools-grid" aria-label="What you get">
+  <div class="tool">
+    <h3>Redirect</h3>
+    <p>Visitors hit your short URL and are sent to the real destination.</p>
+  </div>
+  <div class="tool">
+    <h3>Visit log</h3>
+    <p>GPS-first location for the map when possible; otherwise IP-based estimate for public IPs. Plus time, IP, User-Agent, and Referer.</p>
+  </div>
+  <div class="tool">
+    <h3>Secret dashboard</h3>
+    <p>Only the stats URL you receive at creation can list visits—save it.</p>
+  </div>
+</section>
+
+<script>
+(function () {
+  var form = document.getElementById('create-form');
+  var err = document.getElementById('form-err');
+  var result = document.getElementById('result');
+  var btn = document.getElementById('submit-btn');
+  var notice = document.getElementById('url-notice');
+  var outShort = document.getElementById('out-short');
+
+  function showUrlNotice() {
+    notice.hidden = false;
+    notice.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideUrlNotice() {
+    notice.hidden = true;
+    notice.setAttribute('aria-hidden', 'true');
+  }
+
+  document.getElementById('url-notice-dismiss').addEventListener('click', hideUrlNotice);
+
+  outShort.addEventListener('click', showUrlNotice);
+  outShort.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      showUrlNotice();
+    }
+  });
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    err.hidden = true;
+    result.classList.remove('visible');
+    btn.disabled = true;
+
+    fetch('{{ url_for("api_create") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: document.getElementById('url').value.trim() })
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          err.textContent = res.body.error || 'Something went wrong';
+          err.hidden = false;
+          return;
+        }
+        outShort.textContent = res.body.short_url;
+        document.getElementById('out-stats').textContent = res.body.stats_url;
+        result.classList.add('visible');
+        hideUrlNotice();
+      })
+      .catch(function () {
+        err.textContent = 'Network error';
+        err.hidden = false;
+      })
+      .then(function () { btn.disabled = false; });
+  });
+})();
+</script>
+{% endblock %}

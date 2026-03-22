@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block body_attrs %} class="page-stats"{% endblock %}
+{% block title %}Stats · {{ slug }} · OpenShort{% endblock %}
+{% block extra_head %}
+{% if visits and has_visit_maps %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+  .leaflet-container { background: #2a3140; font-family: var(--font-body, system-ui, sans-serif); }
+</style>
+{% endif %}
+{% endblock %}
+{% block body %}
+<div class="stats-head">
+  <h1>Link stats</h1>
+  <p class="stats-meta"><span class="mono-td">/l/{{ slug }}</span> → {{ destination }}</p>
+  <p class="stats-meta"><span title="{{ created_at }}">Created {{ created_at_human }}</span> · Showing up to {{ visit_count }} recent visits</p>
+</div>
+
+<div class="card visits-table-card">
+  {% if visits %}
+  <p class="visits-table-hint">Click <strong>Show map</strong> on a row to load that visit’s map (tiles load only then). <strong>GPS</strong> = green pin, <strong>IP estimate</strong> = amber.</p>
+  <p class="osm-attribution">Map tiles © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> contributors</p>
+  <div class="visits-scroll">
+  <table class="visits">
+    <thead>
+      <tr>
+        <th class="col-time">When (MYT)</th>
+        <th class="col-mini-map">Map</th>
+        <th class="col-ip">IP</th>
+        <th class="col-area">IP area</th>
+        <th class="col-gps">GPS</th>
+        <th class="col-ua">User-Agent</th>
+        <th class="col-ref">Referrer</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in visits %}
+      <tr>
+        <td class="col-time"><span class="time-human" title="{{ v['visited_at'] }}">{{ v['visited_at_human'] }}</span></td>
+        <td class="col-mini-map">
+          {% if v['visit_map_lat'] is not none %}
+          <div class="map-slot">
+            <button type="button" class="map-reveal"
+                    data-lat="{{ v['visit_map_lat'] }}"
+                    data-lng="{{ v['visit_map_lng'] }}"
+                    data-kind="{{ v['visit_map_kind'] }}">Show map</button>
+            <div class="visit-mini-map" hidden aria-hidden="true"></div>
+          </div>
+          {% else %}
+          <span class="map-placeholder">—</span>
+          {% endif %}
+        </td>
+        <td class="col-ip"><span class="mono-td">{{ v['ip'] or '—' }}</span></td>
+        <td class="col-area">{{ v['ip_area'] or '—' }}</td>
+        <td class="col-gps"><span class="mono-td">{{ v['gps_cell'] or '—' }}</span></td>
+        <td class="col-ua ua-cell">{{ v['user_agent'] or '—' }}</td>
+        <td class="col-ref ref-cell">{{ v['referrer'] or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">No visits yet. Open the short link in another tab or device.</p>
+  {% endif %}
+</div>
+<p><a href="{{ url_for('index') }}">← Create another link</a></p>
+
+{% if visits and has_visit_maps %}
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function () {
+  var tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  var tileOpts = { maxZoom: 19, attribution: '' };
+
+  function mountMap(el, lat, lng, kind) {
+    if (el.dataset.mounted === '1') return;
+    el.dataset.mounted = '1';
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    var map = L.map(el, {
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
+      keyboard: false
+    });
+    L.tileLayer(tileUrl, tileOpts).addTo(map);
+    var color = kind === 'gps' ? '#3ee8a9' : '#f0b429';
+    L.circleMarker([lat, lng], {
+      radius: 8,
+      color: color,
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.9
+    }).addTo(map);
+    map.setView([lat, lng], 14);
+    setTimeout(function () { map.invalidateSize(); }, 50);
+  }
+
+  var scroll = document.querySelector('.visits-scroll');
+  if (!scroll || typeof L === 'undefined') return;
+
+  scroll.addEventListener('click', function (e) {
+    var btn = e.target.closest('.map-reveal');
+    if (!btn) return;
+    var slot = btn.closest('.map-slot');
+    if (!slot) return;
+    var host = slot.querySelector('.visit-mini-map');
+    if (!host) return;
+
+    var lat = parseFloat(btn.dataset.lat, 10);
+    var lng = parseFloat(btn.dataset.lng, 10);
+    var kind = btn.dataset.kind || 'ip';
+
+    btn.hidden = true;
+    host.hidden = false;
+    host.removeAttribute('aria-hidden');
+    host.setAttribute('aria-label', 'Location map for this visit');
+
+    mountMap(host, lat, lng, kind);
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

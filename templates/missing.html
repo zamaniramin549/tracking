@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Not found · OpenShort{% endblock %}
+{% block body %}
+<div class="error-page">
+  <h1>Unknown link</h1>
+  <p class="lead" style="max-width:none;">This short code does not exist or was removed.</p>
+  <p><a href="{{ url_for('index') }}">Home</a></p>
+</div>
+{% endblock %}

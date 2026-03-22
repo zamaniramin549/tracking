@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Access denied · OpenShort{% endblock %}
+{% block body %}
+<div class="error-page">
+  <h1>Stats locked</h1>
+  <p class="lead" style="max-width:none;">Invalid or missing token. Only the stats URL shown when you created the link can open this page.</p>
+  <p><a href="{{ url_for('index') }}">Home</a></p>
+</div>
+{% endblock %}
